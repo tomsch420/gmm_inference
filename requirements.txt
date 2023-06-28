@@ -1,0 +1,5 @@
+pyjpt>=0.1.22
+scikit-learn~=1.2.2
+setuptools~=65.5.1
+pandas~=2.0.2
+scipy~=1.11.0
