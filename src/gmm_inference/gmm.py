@@ -9,6 +9,7 @@ import sklearn.mixture
 from jpt.base.intervals import R, ContinuousSet, RealSet
 from jpt.variables import Variable, VariableAssignment, VariableMap, LabelAssignment, ValueAssignment
 from scipy.stats import multivariate_normal
+import plotly.graph_objects as go
 
 
 class GaussianMixture(sklearn.mixture.GaussianMixture):
@@ -81,6 +82,12 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
         :param fail_on_unsatisfiability: Rather to raise an error of the evidence is impossible or not.
         :return: A VariableMap mapping to dirac impulses or 1D Gaussian mixtures.
         """
+
+        if evidence is None:
+            evidence = LabelAssignment(variables=self.variables)
+
+        if isinstance(evidence, LabelAssignment):
+            evidence = evidence.value_assignment()
 
         if variables is None:
             variables = self.variables
@@ -581,3 +588,33 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
                 result[:, index] = evidence[variable].lower
 
         return result
+
+    def plot(self, points_per_dimension: int = 1000, variance_scaling: float = 2.5) -> go.Figure:
+        """
+        Create a plotly figure that contains a visualization of the GMM in up to 2 dimensions.
+        :return: Plotly Figure
+        """
+
+        # initialize result
+        fig = go.Figure()
+
+        if len(self.variables) == 1:
+            variable = self.variables[0]
+            variance = self.variance()[variable]
+            expectation = self.expectation()[variable]
+
+            leftmost = expectation - variance_scaling * variance
+            rightmost = expectation + variance_scaling * variance
+
+            points = np.linspace(leftmost, rightmost, points_per_dimension)
+            likelihoods = self.likelihood(points.reshape(-1, 1))
+
+            fig.add_trace(go.Scatter(x=points, y=likelihoods, name="Likelihood"))
+            fig.update_layout(title=f"Probability Density Function of {variable.name}", showlegend=True)
+
+        elif len(self.variables) == 2:
+            pass
+
+        else:
+            raise NotImplementedError("Plotting is not supported for more than two dimensions.")
+        return fig

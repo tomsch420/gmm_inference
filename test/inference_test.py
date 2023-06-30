@@ -151,6 +151,13 @@ class InferenceTestCase(unittest.TestCase):
         self.assertTrue(np.all(samples[:, 0] == 5))
         self.assertTrue(np.all(self.model.likelihood(samples) > 0))
 
+    def test_plot(self):
+        posteriors = self.model.posterior()
+
+        for variable, dist in posteriors.items():
+            dist.plot().show()
+
+
 
 if __name__ == '__main__':
     unittest.main()
