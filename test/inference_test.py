@@ -1,13 +1,15 @@
 import unittest
-import gmm_inference.gmm
+
+import jpt
+import jpt.distributions.univariate
+import numpy as np
 import pandas as pd
 import sklearn.datasets
-import jpt
-import numpy as np
+
+import gmm_inference.gmm
 
 
 class InferenceTestCase(unittest.TestCase):
-
     model: gmm_inference.gmm.GaussianMixture
     data: pd.DataFrame
 
@@ -74,8 +76,81 @@ class InferenceTestCase(unittest.TestCase):
         self.assertTrue(prob > 0)
 
     def test_posterior(self):
-        query = self.model.bind({"sepal length (cm)": [5, 5],
-                                 "sepal width (cm)": [5, 6]})
+        evidence = self.model.bind({"sepal length (cm)": [5, 5],
+                                    "sepal width (cm)": 5})
+        posterior = self.model.posterior(evidence=evidence)
+        self.assertTrue(isinstance(posterior["sepal length (cm)"], jpt.distributions.univariate.Numeric))
+        self.assertTrue(isinstance(posterior["sepal width (cm)"], jpt.distributions.univariate.Numeric))
+        self.assertTrue(isinstance(posterior["petal length (cm)"], gmm_inference.gmm.GaussianMixture))
+        self.assertTrue(isinstance(posterior["petal width (cm)"], gmm_inference.gmm.GaussianMixture))
+        posterior["petal width (cm)"].expectation()
+        posterior["petal width (cm)"].variance()
+
+    def test_likelihood(self):
+        likelihoods = self.model.likelihood(self.data.to_numpy())
+        self.assertTrue(len(self.data), len(likelihoods))
+        self.assertTrue(all(likelihoods > 0))
+
+    def test_mpe(self):
+        evidence = self.model.bind({"sepal length (cm)": [5, 5],
+                                    "sepal width (cm)": [1, 6]})
+        mpe, likelihood = self.model.mpe(evidence)
+        self.assertEqual(len(mpe), 1)
+        self.assertTrue(likelihood > 0)
+
+    def test_conditional_gaussian(self):
+        """Test the conditional gaussian using the example from https://www.youtube.com/watch?v=3DREBC6fr6g&t=3s """
+        mean = np.array([1, 2, 0, 3])
+        covariance = np.array([[4, 0, 1, 3],
+                               [0, 4, 1, 1],
+                               [1, 1, 3, 1],
+                               [3, 1, 1, 9]])
+
+        variables = [jpt.variables.NumericVariable(f"X{i}") for i in range(4)]
+
+        model = gmm_inference.gmm.GaussianMixture(variables)
+
+        evidence = model.bind({"X1": 2, "X3": 3})
+
+        resulting_mean, resulting_covariance = model.conditional_multivariate_gaussian(evidence, mean, covariance)
+        self.assertTrue(np.allclose(np.array([1, 0]), resulting_mean))
+
+        covariance_result_from_exercise = 1 / 35 * np.array([[104, 26],
+                                                             [26, 94]])
+        self.assertTrue(np.allclose(covariance_result_from_exercise, resulting_covariance))
+
+    def test_conditional_gmm(self):
+        evidence = self.model.bind({"sepal length (cm)": [5, 5]})
+        result = self.model.conditional_gmm(evidence)
+        self.assertEqual(len(result.variables), 3)
+
+    def test_expectation(self):
+        result = self.model.expectation()
+        self.assertTrue(np.allclose(np.array([*result.values()]), self.data.to_numpy().mean(axis=0)))
+        evidence = self.model.bind({"sepal length (cm)": [5, 5]})
+        result = self.model.expectation(evidence)
+
+    def test_variance(self):
+        result = self.model.variance()
+
+        self.assertTrue(np.allclose(np.array([*result.values()]), self.data.to_numpy().var(axis=0), atol=0.001))
+        evidence = self.model.bind({"sepal length (cm)": [5, 5]})
+
+        result = self.model.variance(evidence)
+        self.assertEqual(result["sepal length (cm)"], 0)
+
+    def test_sample(self):
+        samples = self.model.sample(amount=100)
+        self.assertEqual(samples.shape, (100, len(self.data.columns)))
+        self.assertTrue(np.all(self.model.likelihood(samples) > 0))
+
+        evidence = self.model.bind({"sepal length (cm)": [5, 5]})
+        samples = self.model.sample(evidence, 100)
+
+        self.assertEqual(samples.shape, (100, len(self.data.columns)))
+        self.assertTrue(np.all(samples[:, 0] == 5))
+        self.assertTrue(np.all(self.model.likelihood(samples) > 0))
+
 
 if __name__ == '__main__':
     unittest.main()
