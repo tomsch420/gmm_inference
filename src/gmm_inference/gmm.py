@@ -589,7 +589,7 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
 
         return result
 
-    def plot(self, points_per_dimension: int = 1000, variance_scaling: float = 2.5) -> go.Figure:
+    def plot(self, points_per_dimension: int = 500, variance_scaling: float = 2.5) -> go.Figure:
         """
         Create a plotly figure that contains a visualization of the GMM in up to 2 dimensions.
         :return: Plotly Figure
@@ -613,7 +613,23 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
             fig.update_layout(title=f"Probability Density Function of {variable.name}", showlegend=True)
 
         elif len(self.variables) == 2:
-            pass
+            variable_x = self.variables[0]
+            variable_y = self.variables[1]
+            expectation = self.expectation()
+            variance = self.variance()
+
+            leftmost_x = expectation[variable_x] - variance_scaling * variance[variable_x]
+            rightmost_x = expectation[variable_x] + variance_scaling * variance[variable_x]
+            leftmost_y = expectation[variable_y] - variance_scaling * variance[variable_y]
+            rightmost_y = expectation[variable_y] + variance_scaling * variance[variable_y]
+
+            points_x = np.linspace(leftmost_x, rightmost_x, points_per_dimension)
+            points_y = np.linspace(leftmost_y, rightmost_y, points_per_dimension)
+
+            points = np.array(list(itertools.product(points_x, points_y)))
+            likelihoods = self.likelihood(points)
+            fig.add_trace(go.Surface(x=points_x, y=points_y, z=likelihoods.reshape((points_per_dimension,
+                                                                                    points_per_dimension))))
 
         else:
             raise NotImplementedError("Plotting is not supported for more than two dimensions.")
