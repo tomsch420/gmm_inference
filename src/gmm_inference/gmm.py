@@ -55,7 +55,7 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
         """
 
         if query is None:
-            return LabelAssignment({variable: R for variable in self.variables}.items())
+            return LabelAssignment(list({variable: R for variable in self.variables}.items()))
 
         result = LabelAssignment(variables=self.variables)
 
@@ -412,7 +412,8 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
         max_likelihood = np.max(likelihoods)
         results = [point for point, likelihood in zip(candidate_points, likelihoods) if likelihood == max_likelihood]
 
-        return [ValueAssignment({variable: value for variable, value in zip(self.variables, point)}).label_assignment()
+        return [ValueAssignment(
+            list({variable: value for variable, value in zip(self.variables, point)}.items())).label_assignment()
                 for point in results], max_likelihood
 
     def conditional_gmm(self, evidence: Optional[VariableAssignment] = None, fail_on_unsatisfiability: bool = True) -> \
