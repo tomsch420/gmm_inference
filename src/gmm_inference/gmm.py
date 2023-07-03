@@ -5,11 +5,11 @@ from typing import Union, Dict, Any, List, Optional, Tuple
 import jpt.distributions.univariate
 import jpt.trees
 import numpy as np
+import plotly.graph_objects as go
 import sklearn.mixture
 from jpt.base.intervals import R, ContinuousSet, RealSet
 from jpt.variables import Variable, VariableAssignment, VariableMap, LabelAssignment, ValueAssignment
 from scipy.stats import multivariate_normal
-import plotly.graph_objects as go
 
 
 class GaussianMixture(sklearn.mixture.GaussianMixture):
@@ -77,8 +77,8 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
                   fail_on_unsatisfiability: bool = True) -> Optional[VariableMap]:
         """
         Calculate the independent posterior distributions given the evidence.
-        :param variables: The variables to calculate the distributions on
-        :param evidence: The evidence to apply
+        :param variables: The variables to calculate the distributions on.
+        :param evidence: The evidence to apply.
         :param fail_on_unsatisfiability: Rather to raise an error of the evidence is impossible or not.
         :return: A VariableMap mapping to dirac impulses or 1D Gaussian mixtures.
         """
@@ -112,12 +112,18 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
             # and a 1D gaussian mixture if it's not evidence
             index_in_cg = conditional_gmm.variables.index(variable)
 
+            # create the 1D gaussian
             distribution = GaussianMixture([variable])
-            distribution.weights_ = conditional_gmm.weights_
-            distribution.means_ = [mean[index_in_cg] for mean in conditional_gmm.means_]
-            distribution.covariances_ = [covariance[index_in_cg, index_in_cg].reshape(1, -1)
-                                         for covariance in conditional_gmm.covariances_]
 
+            # copy its weights
+            distribution.weights_ = conditional_gmm.weights_
+
+            # use the conditional evidence vectors
+            distribution.means_ = np.array([mean[index_in_cg] for mean in conditional_gmm.means_]).reshape((-1, 1))
+
+            # and the conditional covariance matrices
+            distribution.covariances_ = np.array([covariance[index_in_cg, index_in_cg].reshape(1, -1)
+                                                  for covariance in conditional_gmm.covariances_])
             result[variable] = distribution
 
         return result
@@ -150,9 +156,6 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
 
         expectation = np.sum([weight * mean for weight, mean in zip(conditional_gmm.weights_, conditional_gmm.means_)],
                              axis=0)
-
-        if len(self.variables) == 1:
-            expectation = [expectation]
 
         for variable, expected_value in zip(conditional_gmm.variables, expectation):
             result[variable] = expected_value
@@ -379,7 +382,10 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
             fail_on_unsatisfiability: bool = True) -> Optional[Tuple[List[LabelAssignment], float]]:
         """
         Get the most likely states given some evidence. This uses an approximation by seeking for points inside the
-        specified sets that are closest to the mean.
+        specified sets that are closest to the mean of each component.
+
+        Careful: The results might not be correct since an exact MPE is infeasible for GMM models.
+
         :param evidence: The evidence (set) to search in
         :param fail_on_unsatisfiability:
         :return: A list of LabelAssignment that maps each variable to its most likely value. The list contains multiple
@@ -560,7 +566,7 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
     def sample(self, evidence: Optional[VariableAssignment] = None, amount: int = 100) -> np.ndarray:
         """
         Sample from the GMM given the evidence.
-        :param evidence: The evidence
+        :param evidence: The evidence.
         :param amount: The number of samples to draw.
         :return: A numpy array of shape (len(self.variables), amount) containing the samples
         """
@@ -589,7 +595,7 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
 
         return result
 
-    def plot(self, points_per_dimension: int = 500, variance_scaling: float = 2.5) -> go.Figure:
+    def plot(self, points_per_component=1000) -> go.Figure:
         """
         Create a plotly figure that contains a visualization of the GMM in up to 2 dimensions.
         :return: Plotly Figure
@@ -598,38 +604,61 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
         # initialize result
         fig = go.Figure()
 
+        # if distribution is 1D
         if len(self.variables) == 1:
+
+            # shortcut variable
             variable = self.variables[0]
-            variance = self.variance()[variable]
+
+            # sample points
+            points = np.sort(self.sample(amount=self.n_components * points_per_component), axis=0)
+
+            # calculate likelihoods
+            likelihoods = self.likelihood(points)
+
+            # add pdf to figure
+            fig.add_trace(go.Scatter(x=points[:, 0], y=likelihoods, name="Likelihood"))
+
+            # get mpe and expectation
+            mpes, maximum_likelihood = self.mpe()
             expectation = self.expectation()[variable]
 
-            leftmost = expectation - variance_scaling * variance
-            rightmost = expectation + variance_scaling * variance
+            # add expectation to the figure
+            fig.add_trace(go.Scatter(x=[expectation, expectation], y=[0, maximum_likelihood * 1.1], name="Expectation"))
 
-            points = np.linspace(leftmost, rightmost, points_per_dimension)
-            likelihoods = self.likelihood(points.reshape(-1, 1))
+            # add MPE to figure
+            fig.add_trace(go.Scatter(x=[mpe[variable] for mpe in mpes] * 2,
+                          y=np.array([[0, maximum_likelihood * 1.1] for _ in mpes]).flatten(),
+                                     name="Approximate Most Probable Explanation"))
 
-            fig.add_trace(go.Scatter(x=points, y=likelihoods, name="Likelihood"))
-            fig.update_layout(title=f"Probability Density Function of {variable.name}", showlegend=True)
+            fig.update_layout(title=f"Probability Density Function of {variable.name}", showlegend=True,
+                              xaxis_title=variable.name, yaxis_title="Likelihood")
 
+        # if distribution is 2D
         elif len(self.variables) == 2:
+
+            # shortcut variables
             variable_x = self.variables[0]
             variable_y = self.variables[1]
-            expectation = self.expectation()
-            variance = self.variance()
 
-            leftmost_x = expectation[variable_x] - variance_scaling * variance[variable_x]
-            rightmost_x = expectation[variable_x] + variance_scaling * variance[variable_x]
-            leftmost_y = expectation[variable_y] - variance_scaling * variance[variable_y]
-            rightmost_y = expectation[variable_y] + variance_scaling * variance[variable_y]
+            # round the number of points to sample
+            amount = int(np.sqrt(self.n_components * points_per_component))
 
-            points_x = np.linspace(leftmost_x, rightmost_x, points_per_dimension)
-            points_y = np.linspace(leftmost_y, rightmost_y, points_per_dimension)
+            # sample points
+            samples = np.sort(self.sample(amount=amount), axis=0)
 
-            points = np.array(list(itertools.product(points_x, points_y)))
+            # create cartesian product for surface plot
+            points = np.array(list(itertools.product(samples[:, 0], samples[:, 1])))
+
+            # calculate likelihoods
             likelihoods = self.likelihood(points)
-            fig.add_trace(go.Surface(x=points_x, y=points_y, z=likelihoods.reshape((points_per_dimension,
-                                                                                    points_per_dimension))))
+
+            # add to figure
+            fig.add_trace(go.Surface(x=samples[:, 0], y=samples[:, 1], z=likelihoods.reshape((amount, amount)),
+                                     name="Likelihood"))
+            fig.update_layout(title=f"Joint Probability Density Function of {variable_x.name} and {variable_y.name}",
+                              scene=dict(xaxis_title=variable_x.name, yaxis_title=variable_y.name,
+                                         zaxis_title="Likelihood"))
 
         else:
             raise NotImplementedError("Plotting is not supported for more than two dimensions.")

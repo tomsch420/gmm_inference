@@ -151,19 +151,31 @@ class InferenceTestCase(unittest.TestCase):
         self.assertTrue(np.all(samples[:, 0] == 5))
         self.assertTrue(np.all(self.model.likelihood(samples) > 0))
 
+    def test_posterior_parameter_shape(self):
+        posteriors = self.model.posterior()
+        for index, (variable, dist) in enumerate(posteriors.items()):
+            sklearn_model = sklearn.mixture.GaussianMixture(n_components=self.model.n_components)
+            sklearn_model.fit(self.data.to_numpy()[:, index].reshape(-1, 1))
+            self.assertEqual(sklearn_model.means_.shape, dist.means_.shape)
+            self.assertEqual(sklearn_model.covariances_.shape, dist.covariances_.shape)
+
+    def test_sample_1D(self):
+        posteriors = self.model.posterior()
+        for variable, dist in posteriors.items():
+            samples = dist.sample(amount=100)
+            self.assertTrue(all(self.model.likelihood(samples.reshape(-1, 1)) > 0))
+
     def test_plot_1D(self):
         posteriors = self.model.posterior()
 
         for variable, dist in posteriors.items():
-            dist.plot()
+            dist.plot().show()
 
     def test_plot_2D(self):
         evidence = self.model.bind({"sepal length (cm)": 5,
                                     "sepal width (cm)": 6})
         conditional_gmm = self.model.conditional_gmm(evidence)
-        conditional_gmm.plot().show()
-
-
+        conditional_gmm.plot()
 
 
 if __name__ == '__main__':
