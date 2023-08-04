@@ -171,6 +171,12 @@ class InferenceTestCase(unittest.TestCase):
         for variable, dist in posteriors.items():
             dist.plot().show()
 
+    def test_plot_1D_with_components(self):
+        posteriors = self.model.posterior()
+
+        for variable, dist in posteriors.items():
+            dist.plot(plot_components=True).show()
+
     def test_plot_2D(self):
         evidence = self.model.bind({"sepal length (cm)": 5,
                                     "sepal width (cm)": 6})

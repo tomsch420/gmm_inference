@@ -595,9 +595,11 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
 
         return result
 
-    def plot(self, points_per_component=1000) -> go.Figure:
+    def plot(self, points_per_component=1000, plot_components=False) -> go.Figure:
         """
         Create a plotly figure that contains a visualization of the GMM in up to 2 dimensions.
+        :param points_per_component: The number of points to sample per component
+        :param plot_components: Rather to plot the single components as dashed lines in the background
         :return: Plotly Figure
         """
 
@@ -633,6 +635,16 @@ class GaussianMixture(sklearn.mixture.GaussianMixture):
 
             fig.update_layout(title=f"Probability Density Function of {variable.name}", showlegend=True,
                               xaxis_title=variable.name, yaxis_title="Likelihood")
+
+            if plot_components:
+                for idx, (weight, mean, covariance) in enumerate(zip(self.weights_, self.means_, self.covariances_)):
+                    dist = multivariate_normal(mean, covariance)
+                    points = sorted(dist.rvs(size=points_per_component))
+                    likelihoods = dist.pdf(points)
+                    fig.add_trace(go.Scatter(x=points, y=likelihoods,
+                                             line=dict(dash='dash'),
+                                             name=f"Component {idx}: " +
+                                                  f"{weight:.2f} ⋅ N({mean[0]:.2f}, {covariance[0,0]:.2f})"))
 
         # if distribution is 2D
         elif len(self.variables) == 2:
